@@ -386,7 +386,7 @@ a{color:#2563eb}</style></head>
 <h2>Cach dung</h2>
 <ol>
 <li>Mo <strong>claude.ai</strong> → Settings → Connectors → Add custom connector</li>
-<li>URL: <code>${url.origin}/mcp</code></li>
+<li>URL: <code>https://resproxy.io/api/nhanh/mcp</code></li>
 <li>Them 3 custom headers:
 <pre>X-Nhanh-Token: &lt;access_token&gt;
 X-Nhanh-App-Id: &lt;app_id&gt;
