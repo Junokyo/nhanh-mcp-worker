@@ -50,16 +50,25 @@ Nhanh.vn API v3.0
 7. Frontend tạo Connector URL: `resproxy.io/api/nhanh/mcp?token=...&appId=...&businessId=...`
 8. Sếp dán vào `claude.ai` → Settings → Connectors
 
-## 6 MCP Tools
+## 11 MCP Tools
 
-| Tool | Nhanh.vn API | Mô tả |
-|------|--------------|-------|
-| `check_token` | `/app/checkaccesstoken` | Check token còn hạn |
-| `get_orders` | `/order/list` | Lấy đơn hàng theo ngày/trạng thái |
-| `get_revenue_report` | `/order/list` (aggregate) | Tính doanh thu + breakdown |
-| `get_top_products` | `/order/list` (aggregate) | Top sản phẩm bán chạy |
-| `get_inventory` | `/product/list` | Tồn kho |
-| `get_customers` | `/customer/search` | Tìm khách hàng |
+| # | Tool | Nhanh.vn API | Mô tả |
+|---|------|--------------|-------|
+| 1 | `check_token` | `/app/checkaccesstoken` | Check token còn hạn |
+| 2 | `get_orders` | `/order/list` | Đơn hàng theo ngày/trạng thái (auto-split 31-day chunks) |
+| 3 | `get_revenue_report` | `/order/list` (aggregate) | Doanh thu + breakdown theo status/ngày |
+| 4 | `get_top_products` | `/order/list` (aggregate) | Top sản phẩm bán chạy theo qty |
+| 5 | `get_inventory` | `/product/list` | Tồn kho sản phẩm |
+| 6 | `get_customers` | `/customer/search` hoặc `/customer/list` (listAll=true) | Tìm/list khách hàng |
+| 7 | `get_bills` | `/bill/imexs` (mode=2) | Hoá đơn bán lẻ + chi tiết sản phẩm (chính xác hơn order cho POS) |
+| 8 | `get_bill_list` | `/bill/list` | Phiếu xuất/nhập kho tổng quan |
+| 9 | `get_product_categories` | `/product/category` | Danh mục sản phẩm |
+| 10 | `get_internal_categories` | `/product/internalcategory` | Danh mục nội bộ |
+| 11 | `get_order_sources` | `/order/source` | Nguồn đơn (FB, Insta, offline...) |
+
+**Không có (đã thử):**
+- `/accounting/debts`, `/accounting/transaction` — ERR_403, Nhanh.vn không cấp OAuth scope accounting
+- `/depot/list` — endpoint path không tìm được (thử 20+ biến thể đều 404)
 
 ## Nhanh.vn API v3 quirks
 

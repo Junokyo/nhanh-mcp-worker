@@ -30,16 +30,21 @@ Nhanh.vn API v3.0
 | `/mcp` | POST | MCP JSON-RPC endpoint |
 | `/exchange` | POST | Đổi accessCode → accessToken (proxy Nhanh API, tránh CORS) |
 
-## Tools MCP
+## Tools MCP (11 tools)
 
 | Tool | Mô tả |
 |------|-------|
 | `check_token` | Kiểm tra token còn hạn |
-| `get_orders` | Danh sách đơn hàng theo ngày/trạng thái |
+| `get_orders` | Đơn hàng theo ngày/trạng thái (auto-split date range 31-day chunks) |
 | `get_revenue_report` | Doanh thu + breakdown theo trạng thái + theo ngày |
-| `get_top_products` | Top sản phẩm bán chạy |
+| `get_top_products` | Top sản phẩm bán chạy theo số lượng |
 | `get_inventory` | Tồn kho sản phẩm |
-| `get_customers` | Tìm kiếm khách hàng |
+| `get_customers` | Tìm kiếm/list khách hàng (keyword hoặc listAll=true) |
+| `get_bills` | Hoá đơn bán lẻ chi tiết sản phẩm (/bill/imexs mode=2) |
+| `get_bill_list` | Phiếu xuất/nhập kho (/bill/list) |
+| `get_product_categories` | Danh mục sản phẩm |
+| `get_internal_categories` | Danh mục nội bộ |
+| `get_order_sources` | Nguồn đơn hàng (FB, TikTok, offline...) |
 
 ## Self-host
 

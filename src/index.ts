@@ -152,11 +152,42 @@ const TOOLS = [
   },
   {
     name: "get_customers",
-    description: "Tim kiem khach hang",
+    description:
+      "Tim kiem/liet ke khach hang. Mac dinh dung /customer/search. Neu muon list toan bo set listAll=true (dung /customer/list)",
     inputSchema: {
       type: "object",
       properties: {
-        keyword: { type: "string" },
+        keyword: { type: "string", description: "Tu khoa: ten, sdt, email" },
+        listAll: { type: "boolean", description: "Neu true thi list toan bo (khong can keyword)" },
+        maxPages: { type: "number" },
+      },
+    },
+  },
+  {
+    name: "get_product_categories",
+    description: "Lay danh sach danh muc san pham (category)",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_internal_categories",
+    description: "Lay danh sach danh muc noi bo cua san pham",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_order_sources",
+    description: "Lay danh sach nguon don hang (traffic source): FB, TikTok, offline, affiliate, etc.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "get_bill_list",
+    description:
+      "Lay danh sach phieu xuat/nhap kho (bill). Trang thai san pham trong kho. Date: dd/mm/yyyy",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fromDate: { type: "string", description: "dd/mm/yyyy" },
+        toDate: { type: "string", description: "dd/mm/yyyy" },
+        mode: { type: "number", description: "1=xuat, 2=ban le, 3=nhap... (tuy chon)" },
         maxPages: { type: "number" },
       },
     },
@@ -397,11 +428,12 @@ async function callTool(name: string, args: any, creds: NhanhCredentials): Promi
       }
 
       case "get_customers": {
+        const endpoint = args.listAll ? "/customer/list" : "/customer/search";
         const body: any = {};
         if (args.keyword) body.name = args.keyword;
 
         const customers = await callNhanhApiPaginated(
-          "/customer/search",
+          endpoint,
           body,
           creds,
           { maxPages: args.maxPages || 3, size: 50 }
@@ -421,6 +453,54 @@ async function callTool(name: string, args: any, creds: NhanhCredentials): Promi
 
         return textResult(
           `Tim thay ${list.length} khach hang.\n\n${JSON.stringify(list.slice(0, 20), null, 2)}`
+        );
+      }
+
+      case "get_product_categories": {
+        const result = await callNhanhApi("/product/category", {}, creds);
+        return textResult(JSON.stringify(result.data, null, 2));
+      }
+
+      case "get_internal_categories": {
+        const result = await callNhanhApi("/product/internalcategory", {}, creds);
+        return textResult(JSON.stringify(result.data, null, 2));
+      }
+
+      case "get_order_sources": {
+        const result = await callNhanhApi("/order/source", {}, creds);
+        return textResult(JSON.stringify(result.data, null, 2));
+      }
+
+      case "get_bill_list": {
+        let bills: any[];
+        const extraFilters: any = {};
+        if (args.mode) extraFilters.mode = args.mode;
+
+        if (args.fromDate && args.toDate) {
+          const chunks = splitDateRange(args.fromDate, args.toDate);
+          bills = [];
+          for (const [from, to] of chunks) {
+            const chunk = await callNhanhApiPaginated(
+              "/bill/list",
+              { filters: { ...extraFilters, createdAtFrom: from, createdAtTo: to } },
+              creds,
+              { maxPages: args.maxPages || 100, size: 100 }
+            );
+            bills.push(...chunk);
+          }
+        } else {
+          bills = await callNhanhApiPaginated(
+            "/bill/list",
+            { filters: extraFilters },
+            creds,
+            { maxPages: args.maxPages || 100, size: 100 }
+          );
+        }
+
+        return textResult(
+          `Lay duoc ${bills.length} phieu.\n\n${JSON.stringify(bills.slice(0, 20), null, 2)}${
+            bills.length > 20 ? `\n\n... va ${bills.length - 20} phieu khac` : ""
+          }`
         );
       }
 
