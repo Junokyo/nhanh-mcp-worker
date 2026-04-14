@@ -28,6 +28,54 @@ const ORDER_STATUS: Record<number, string> = {
 };
 const SUCCESS_STATUSES = [60];
 
+const MAX_DAYS_PER_QUERY = 31; // Nhanh.vn /order/list limit
+
+/**
+ * Split [fromDate, toDate] (dd/mm/yyyy) into chunks of <= MAX_DAYS_PER_QUERY days.
+ * Returns list of [createdAtFrom, createdAtTo] Unix timestamp pairs.
+ */
+function splitDateRange(fromDate: string, toDate: string): Array<[number, number]> {
+  const startTs = dateToTimestamp(fromDate);
+  const endTs = dateToEndTimestamp(toDate);
+
+  const chunks: Array<[number, number]> = [];
+  const daySeconds = 86400;
+  const chunkSeconds = MAX_DAYS_PER_QUERY * daySeconds;
+
+  let cursor = startTs;
+  while (cursor <= endTs) {
+    const chunkEnd = Math.min(cursor + chunkSeconds - 1, endTs);
+    chunks.push([cursor, chunkEnd]);
+    cursor = chunkEnd + 1;
+  }
+  return chunks;
+}
+
+/** Fetch all orders across a date range, auto-splitting into 31-day chunks */
+async function fetchOrdersAcrossRange(
+  fromDate: string,
+  toDate: string,
+  creds: NhanhCredentials,
+  extraFilters: Record<string, unknown> = {},
+  options: { maxPagesPerChunk?: number; size?: number } = {}
+): Promise<any[]> {
+  const { maxPagesPerChunk = 20, size = 100 } = options;
+  const chunks = splitDateRange(fromDate, toDate);
+  const all: any[] = [];
+
+  for (const [from, to] of chunks) {
+    const filters = { ...extraFilters, createdAtFrom: from, createdAtTo: to };
+    const orders = await callNhanhApiPaginated(
+      "/order/list",
+      { filters },
+      creds,
+      { maxPages: maxPagesPerChunk, size }
+    );
+    all.push(...orders);
+  }
+  return all;
+}
+
 const TOOLS = [
   {
     name: "check_token",
@@ -89,6 +137,20 @@ const TOOLS = [
     },
   },
   {
+    name: "get_bills",
+    description:
+      "Lay hoa don ban le tu /bill/imexs (mode=2). Chinh xac hon get_orders cho cua hang offline/POS. Date: dd/mm/yyyy",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fromDate: { type: "string", description: "dd/mm/yyyy" },
+        toDate: { type: "string", description: "dd/mm/yyyy" },
+        maxPages: { type: "number" },
+      },
+      required: ["fromDate", "toDate"],
+    },
+  },
+  {
     name: "get_customers",
     description: "Tim kiem khach hang",
     inputSchema: {
@@ -114,36 +176,56 @@ async function callTool(name: string, args: any, creds: NhanhCredentials): Promi
       }
 
       case "get_orders": {
-        const filters: any = {};
-        if (args.fromDate) filters.createdAtFrom = dateToTimestamp(args.fromDate);
-        if (args.toDate) filters.createdAtTo = dateToEndTimestamp(args.toDate);
-        if (args.statuses) filters.statuses = args.statuses;
+        let orders: any[];
 
-        const orders = await callNhanhApiPaginated(
-          "/order/list",
-          { filters },
-          creds,
-          { maxPages: args.maxPages || 5, size: 50 }
-        );
+        if (args.fromDate && args.toDate) {
+          const extraFilters: any = {};
+          if (args.statuses) extraFilters.statuses = args.statuses;
+          orders = await fetchOrdersAcrossRange(
+            args.fromDate,
+            args.toDate,
+            creds,
+            extraFilters,
+            { maxPagesPerChunk: args.maxPages || 100, size: 100 }
+          );
+        } else {
+          const filters: any = {};
+          if (args.fromDate) filters.createdAtFrom = dateToTimestamp(args.fromDate);
+          if (args.toDate) filters.createdAtTo = dateToEndTimestamp(args.toDate);
+          if (args.statuses) filters.statuses = args.statuses;
+
+          orders = await callNhanhApiPaginated(
+            "/order/list",
+            { filters },
+            creds,
+            { maxPages: args.maxPages || 100, size: 100 }
+          );
+        }
+
+        // Summary first, full data after — Claude can parse both
+        const summary = {
+          totalOrders: orders.length,
+          statusBreakdown: orders.reduce((acc: Record<string, number>, o: any) => {
+            const status = o.info?.status || 0;
+            const name = ORDER_STATUS[status] || `Status ${status}`;
+            acc[name] = (acc[name] || 0) + 1;
+            return acc;
+          }, {}),
+          sample: orders.slice(0, 10),
+        };
 
         return textResult(
-          `Tim thay ${orders.length} don hang.\n\n${JSON.stringify(orders.slice(0, 20), null, 2)}${
-            orders.length > 20 ? `\n\n... va ${orders.length - 20} don khac` : ""
-          }`
+          `Lay duoc ${orders.length} don hang (da load toan bo).\n\n${JSON.stringify(summary, null, 2)}`
         );
       }
 
       case "get_revenue_report": {
-        const filters = {
-          createdAtFrom: dateToTimestamp(args.fromDate),
-          createdAtTo: dateToEndTimestamp(args.toDate),
-        };
-
-        const orders = await callNhanhApiPaginated(
-          "/order/list",
-          { filters },
+        const orders = await fetchOrdersAcrossRange(
+          args.fromDate,
+          args.toDate,
           creds,
-          { maxPages: 20, size: 100 }
+          {},
+          { maxPagesPerChunk: 100, size: 100 }
         );
 
         let totalRevenue = 0;
@@ -194,16 +276,12 @@ async function callTool(name: string, args: any, creds: NhanhCredentials): Promi
       }
 
       case "get_top_products": {
-        const filters = {
-          createdAtFrom: dateToTimestamp(args.fromDate),
-          createdAtTo: dateToEndTimestamp(args.toDate),
-        };
-
-        const orders = await callNhanhApiPaginated(
-          "/order/list",
-          { filters },
+        const orders = await fetchOrdersAcrossRange(
+          args.fromDate,
+          args.toDate,
           creds,
-          { maxPages: 20, size: 100 }
+          {},
+          { maxPagesPerChunk: 100, size: 100 }
         );
 
         const productMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
@@ -254,6 +332,67 @@ async function callTool(name: string, args: any, creds: NhanhCredentials): Promi
 
         return textResult(
           `Tim thay ${inventory.length} san pham.\n\n${JSON.stringify(inventory.slice(0, 30), null, 2)}`
+        );
+      }
+
+      case "get_bills": {
+        // /bill/imexs returns bills with product details (including retail sales mode=2)
+        const chunks = splitDateRange(args.fromDate, args.toDate);
+        const all: any[] = [];
+
+        for (const [from, to] of chunks) {
+          const bills = await callNhanhApiPaginated(
+            "/bill/imexs",
+            {
+              filters: {
+                createdAtFrom: from,
+                createdAtTo: to,
+                mode: 2,
+              },
+            },
+            creds,
+            { maxPages: args.maxPages || 100, size: 100 }
+          );
+          all.push(...bills);
+        }
+
+        let totalRevenue = 0;
+        const productMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
+
+        for (const bill of all) {
+          for (const p of bill.products || []) {
+            const qty = parseInt(p.quantity || 1);
+            const price = parseFloat(p.price || 0);
+            totalRevenue += price * qty;
+
+            const name = p.productName || p.name || `ID:${p.productId}`;
+            if (!productMap[name]) productMap[name] = { name, quantity: 0, revenue: 0 };
+            productMap[name].quantity += qty;
+            productMap[name].revenue += price * qty;
+          }
+        }
+
+        const topProducts = Object.values(productMap)
+          .sort((a, b) => b.revenue - a.revenue)
+          .slice(0, 20)
+          .map((p, i) => ({
+            rank: i + 1,
+            name: p.name,
+            quantity: p.quantity,
+            revenue: p.revenue.toLocaleString("vi-VN") + " VND",
+          }));
+
+        return textResult(
+          JSON.stringify(
+            {
+              period: `${args.fromDate} - ${args.toDate}`,
+              totalBills: all.length,
+              totalRevenue: totalRevenue.toLocaleString("vi-VN") + " VND",
+              topProductsByRevenue: topProducts,
+            },
+            null,
+            2
+          )
         );
       }
 
