@@ -164,6 +164,19 @@ const TOOLS = [
     },
   },
   {
+    name: "get_retail_revenue",
+    description:
+      "Doanh thu ban le POS tu /bill/retail (hoa don ban le tai quay). Tach rieng khoi doanh thu don online (/order/list). Date: dd/mm/yyyy",
+    inputSchema: {
+      type: "object",
+      properties: {
+        fromDate: { type: "string", description: "dd/mm/yyyy" },
+        toDate: { type: "string", description: "dd/mm/yyyy" },
+      },
+      required: ["fromDate", "toDate"],
+    },
+  },
+  {
     name: "get_product_categories",
     description: "Lay danh sach danh muc san pham (category)",
     inputSchema: { type: "object", properties: {} },
@@ -453,6 +466,84 @@ async function callTool(name: string, args: any, creds: NhanhCredentials): Promi
 
         return textResult(
           `Tim thay ${list.length} khach hang.\n\n${JSON.stringify(list.slice(0, 20), null, 2)}`
+        );
+      }
+
+      case "get_retail_revenue": {
+        const chunks = splitDateRange(args.fromDate, args.toDate);
+        const all: any[] = [];
+
+        for (const [from, to] of chunks) {
+          const bills = await callNhanhApiPaginated(
+            "/bill/retail",
+            { filters: { createdAtFrom: from, createdAtTo: to } },
+            creds,
+            { maxPages: 100, size: 100 }
+          );
+          all.push(...bills);
+        }
+
+        let totalRevenue = 0;
+        let totalDiscount = 0;
+        let totalBills = all.length;
+        const dailyRevenue: Record<string, number> = {};
+        const productMap: Record<string, { name: string; quantity: number; revenue: number }> = {};
+
+        for (const bill of all) {
+          const billMoney = parseFloat(bill.moneyDeposit || bill.total || bill.moneyTotal || 0);
+          const discount = parseFloat(bill.moneyDiscount || bill.discount || 0);
+          totalDiscount += discount;
+
+          let billProductTotal = 0;
+          for (const p of bill.products || []) {
+            const qty = parseInt(p.quantity || 1);
+            const price = parseFloat(p.price || 0);
+            billProductTotal += price * qty;
+
+            const name = p.productName || p.name || `ID:${p.productId}`;
+            if (!productMap[name]) productMap[name] = { name, quantity: 0, revenue: 0 };
+            productMap[name].quantity += qty;
+            productMap[name].revenue += price * qty;
+          }
+          const billTotal = billMoney || billProductTotal;
+          totalRevenue += billTotal;
+
+          const createdAt = bill.createdAt || 0;
+          const day = createdAt
+            ? new Date(createdAt * 1000).toLocaleDateString("vi-VN")
+            : bill.date || "unknown";
+          dailyRevenue[day] = (dailyRevenue[day] || 0) + billTotal;
+        }
+
+        const topProducts = Object.values(productMap)
+          .sort((a, b) => b.revenue - a.revenue)
+          .slice(0, 10)
+          .map((p, i) => ({
+            rank: i + 1,
+            name: p.name,
+            quantity: p.quantity,
+            revenue: p.revenue.toLocaleString("vi-VN") + " VND",
+          }));
+
+        return textResult(
+          JSON.stringify(
+            {
+              source: "/bill/retail (ban le POS)",
+              period: `${args.fromDate} - ${args.toDate}`,
+              totalBills,
+              totalRevenue: totalRevenue.toLocaleString("vi-VN") + " VND",
+              totalDiscount: totalDiscount.toLocaleString("vi-VN") + " VND",
+              dailyBreakdown: Object.entries(dailyRevenue)
+                .sort()
+                .map(([date, amount]) => ({
+                  date,
+                  revenue: amount.toLocaleString("vi-VN") + " VND",
+                })),
+              topProductsByRevenue: topProducts,
+            },
+            null,
+            2
+          )
         );
       }
 
